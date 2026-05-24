@@ -1,106 +1,105 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from playwright.sync_api import sync_playwright
 import time
+import re
+import random
 
 app = FastAPI()
+templates = Jinja2Templates(directory="templates")
 
-@app.get("/", response_class=HTMLResponse)
-async def pagina_inicial():
-    html_content = """
-    <html>
-        <head>
-            <title>Ticket Ninja 🥷</title>
-            <style>
-                body { font-family: Arial, sans-serif; background-color: #f4f4f9; padding: 50px; text-align: center; }
-                .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0px 4px 10px rgba(0,0,0,0.1); display: inline-block; }
-                input, button { padding: 10px; margin: 10px 0; font-size: 16px; width: 80%; border-radius: 5px; border: 1px solid #ccc; }
-                button { background-color: #007bff; color: white; border: none; cursor: pointer; font-weight: bold; }
-                button:hover { background-color: #0056b3; }
-                #resultados { margin-top: 20px; font-weight: bold; color: #28a745; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1>🥷 Ticket Ninja</h1>
-                <p>Encontre tarifas ocultas usando Arbitragem Geográfica</p>
-                <form id="formBusca">
-                    <input type="text" id="origem" placeholder="Origem (ex: MAO)" required><br>
-                    <input type="text" id="destino" placeholder="Destino (ex: GIG)" required><br>
-                    <input type="date" id="data" required><br>
-                    <button type="submit">Iniciar Varredura Ninja</button>
-                </form>
-                <div id="resultados"></div>
-            </div>
+def extrair_dados_voo(origem, destino, data, config_proxy=None, buscador="kayak"):
+    """Motor universal de raspagem."""
+    if buscador == "kayak":
+        url_alvo = f"https://www.kayak.com.br/flights/{origem}-{destino}/{data}?sort=price_a"
+    else:
+        ano, mes, dia = data.split('-')
+        data_sky = f"{ano[2:]}{mes}{dia}"
+        url_alvo = f"https://www.skyscanner.com.br/transport/flights/{origem.lower()}/{destino.lower()}/{data_sky}/"
 
-            <script>
-                document.getElementById('formBusca').addEventListener('submit', async function(e) {
-                    e.preventDefault();
-                    const divResultados = document.getElementById('resultados');
-                    
-                    divResultados.innerHTML = '⏳ <i>Iniciando navegador invisível no servidor... aguarde cerca de 15 segundos.</i>';
-                    
-                    const origem = document.getElementById('origem').value;
-                    const destino = document.getElementById('destino').value;
-                    const data = document.getElementById('data').value;
-
-                    try {
-                        const resposta = await fetch(`/buscar?origem=${origem}&destino=${destino}&data=${data}`);
-                        const dados = await resposta.json();
-                        
-                        if (dados.status === "sucesso") {
-                            divResultados.innerHTML = `✅ Varredura concluída para ${dados.origem} ➡️ ${dados.destino}! <br><br> <span style='font-size: 18px; color: #333;'>${dados.mensagem}</span>`;
-                        } else {
-                            divResultados.innerHTML = `❌ Erro: ${dados.mensagem}`;
-                        }
-                    } catch (error) {
-                        divResultados.innerHTML = `❌ Erro ao conectar com o servidor Ninja.`;
-                    }
-                });
-            </script>
-        </body>
-    </html>
-    """
-    return html_content
-
-# IMPORTANTE: Tiramos o 'async' daqui. O FastAPI vai rodar isso em paralelo com segurança!
-@app.get("/buscar")
-def rodar_bot_real(origem: str, destino: str, data: str):
-    print(f"🥷 Iniciando varredura no Kayak: {origem} para {destino} em {data}")
-    
-    url_alvo = f"https://www.kayak.com.br/flights/{origem}-{destino}/{data}?sort=price_a"
-    
+    textos_brutos = []
     try:
-        # Usando a versão síncrona (sync_playwright)
         with sync_playwright() as p:
-            navegador = p.chromium.launch(headless=True)
+            args = {"headless": True, "args": ["--disable-blink-features=AutomationControlled"]}
+            if config_proxy: args["proxy"] = config_proxy
+                
+            navegador = p.chromium.launch(**args)
             contexto = navegador.new_context(
                 viewport={'width': 1280, 'height': 720},
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             )
             pagina = contexto.new_page()
-            
-            print("🌍 Acessando o buscador de voos...")
             pagina.goto(url_alvo)
+            time.sleep(20) 
             
-            print("⏳ Aguardando resultados carregarem (15s)...")
-            time.sleep(15)
-            
-            nome_foto = f"resultado_{origem.upper()}_{destino.upper()}.png"
-            pagina.screenshot(path=nome_foto)
-            
+            textos_brutos = pagina.evaluate('''() => {
+                return Array.from(document.querySelectorAll('div, span'))
+                    .map(e => e.innerText)
+                    .filter(t => t && t.length > 15 && t.length < 1000 && 
+                           (t.includes("R$") || t.includes("$") || t.includes("£") || t.includes("€")));
+            }''')
             navegador.close()
-            print(f"✅ Foto salva: {nome_foto}")
-
-        return {
-            "status": "sucesso",
-            "origem": origem.upper(),
-            "destino": destino.upper(),
-            "mensagem": f"O robô buscou a rota e salvou a evidência visual no arquivo: {nome_foto}"
-        }
     except Exception as e:
-        print(f"❌ Erro no robô: {str(e)}")
-        return {
-            "status": "erro",
-            "mensagem": str(e)
+        print(f"⚠️ Erro ao acessar {buscador.capitalize()}: {e}")
+
+    melhor_voo = None
+    menor_valor = float('inf')
+
+    if textos_brutos:
+        for texto in textos_brutos:
+            texto_limpo = texto.replace('\\xa0', ' ').replace('\xa0', ' ')
+            match_preco = re.search(r'((?:R\$|US\$|\$|£|€)\s*([\d\.]+)(?:,\d{2})?)', texto_limpo)
+            if not match_preco: continue
+            
+            try:
+                valor_matematico = float(match_preco.group(2).replace('.', ''))
+                if 50 < valor_matematico < menor_valor:
+                    menor_valor = valor_matematico
+                    match_duracao = re.search(r'(\d{1,2}\s*h\s*\d{1,2}\s*m|\d{1,2}\s*h)', texto_limpo, re.IGNORECASE)
+                    match_escala = re.search(r'(direto|\d+\s*escala[s]?)', texto_limpo, re.IGNORECASE)
+                    
+                    melhor_voo = {
+                        "preco_texto": match_preco.group(1),
+                        "valor_matematico": menor_valor,
+                        "duracao": match_duracao.group(1).replace(' ', '') if match_duracao else "N/A",
+                        "escalas": match_escala.group(1).capitalize() if match_escala else "N/A",
+                        "fonte": buscador.capitalize()
+                    }
+            except: continue
+    return melhor_voo
+
+@app.get("/", response_class=HTMLResponse)
+def tela_inicial(request: Request):
+    return templates.TemplateResponse(request=request, name="index.html")
+
+@app.get("/processar_busca", response_class=HTMLResponse)
+def rodar_bot_real(request: Request, origem: str, destino: str, data: str):
+    print(f"\n🥷 Iniciando varredura multi-motores: {origem} ➡️ {destino}")
+    
+    proxy_sorteado = random.choice([
+        {"ip": "198.105.121.200", "porta": "6462", "pais": "Reino Unido"},
+        {"ip": "38.154.203.95", "porta": "5863", "pais": "EUA"},
+        {"ip": "64.137.96.74", "porta": "6641", "pais": "Espanha"}
+    ])
+    
+    config_proxy = {"server": f"http://{proxy_sorteado['ip']}:{proxy_sorteado['porta']}", "username": "oluuxvlf", "password": "uoqcz77tr4g0"}
+    
+    voos = [extrair_dados_voo(origem, destino, data, config_proxy, b) for b in ["kayak", "skyscanner"]]
+    voos_validos = [v for v in voos if v is not None]
+    
+    if voos_validos:
+        voo_vencedor = min(voos_validos, key=lambda x: x["valor_matematico"])
+    else:
+        voo_vencedor = extrair_dados_voo(origem, destino, data, None, "kayak") or {
+            "preco_texto": "Indisponível", "duracao": "-", "escalas": "-", "fonte": "-"
         }
+
+    # Log seguro para evitar TypeError
+    print(f"✅ Vencedor encontrado com sucesso.")
+
+    return templates.TemplateResponse(
+        request=request, 
+        name="resultado.html", 
+        context={"origem": origem.upper(), "destino": destino.upper(), "data": data, "dados_voo": voo_vencedor}
+    )

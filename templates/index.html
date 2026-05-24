@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ticket Ninja - Busca</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f4f4f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center;}
+        h1 { margin-top: 0; color: #333; }
+        input, button { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 16px;}
+        button { background-color: #2563eb; color: white; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        button:hover { background-color: #1d4ed8; }
+        button:disabled { background-color: #93c5fd; cursor: not-allowed; }
+        
+        #area-loading { display: none; margin-top: 20px; color: #475569; font-weight: bold; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #2563eb; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 10px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🥷 Ticket Ninja</h1>
+        <p>Motor de Busca de Malha Aérea Profunda</p>
+        
+        <form id="formBusca" action="/processar_busca" method="get">
+            <input type="text" name="origem" value="MAO" required placeholder="Origem (ex: MAO)">
+            <input type="text" name="destino" value="GIG" required placeholder="Destino (ex: GIG)">
+            <input type="date" name="data" value="2026-06-15" required>
+            
+            <button type="submit" id="btnBuscar">Buscar Melhor Tarifa</button>
+        </form>
+
+        <div id="area-loading">
+            <div class="spinner"></div>
+            <p>Varrendo Kayak e Skyscanner simultaneamente...<br><span style="font-size: 12px; color: #94a3b8;">Isso exige processamento profundo (aprox. 45 segundos).</span></p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById("formBusca").addEventListener("submit", function() {
+            document.getElementById("btnBuscar").disabled = true;
+            document.getElementById("btnBuscar").innerText = "Processando Rota...";
+            document.getElementById("area-loading").style.display = "block";
+        });
+    </script>
+</body>
+</html>
