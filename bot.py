@@ -1,11 +1,14 @@
 from playwright.sync_api import sync_playwright
 import time
 
-def iniciar_teste_bot():
-    print("🤖 Iniciando o Ticket Ninja...")
+def caçar_passagem(origem, destino, data_ida):
+    print(f"🥷 Ticket Ninja ativado: Buscando {origem} ➡️ {destino} para o dia {data_ida}...")
+    
+    # Construímos a URL direta do Kayak já ordenada pelo menor preço
+    url_alvo = f"https://www.kayak.com.br/flights/{origem}-{destino}/{data_ida}?sort=price_a"
     
     with sync_playwright() as p:
-        # headless=False faz o navegador abrir de verdade na sua tela
+        # Iniciamos o navegador visível para testes
         navegador = p.chromium.launch(headless=False)
         
         contexto = navegador.new_context(
@@ -15,17 +18,23 @@ def iniciar_teste_bot():
         
         pagina = contexto.new_page()
         
-        print("🌍 Acessando site de verificação de IP...")
-        pagina.goto("https://ident.me/")
+        print(f"🌍 Acessando a rota secreta...")
+        pagina.goto(url_alvo)
         
-        ip_detectado = pagina.locator("body").inner_text()
-        print(f"🕵️ IP detectado pelo servidor agora: {ip_detectado}")
+        # Sites de passagem demoram para carregar porque estão buscando em várias companhias.
+        # Precisamos mandar o robô ter paciência e esperar a barra de progresso do site terminar.
+        print("⏳ Aguardando os motores de busca do site terminarem (esperando 15 segundos)...")
+        time.sleep(15)
         
-        print("⏳ Pausando por 5 segundos para você ver a tela...")
-        time.sleep(5)
+        # Como o HTML muda muito, a melhor forma de provar que o bot chegou no resultado 
+        # antes de extrair o texto é tirar uma "foto" da tela.
+        caminho_foto = "resultado_busca.png"
+        pagina.screenshot(path=caminho_foto)
+        print(f"📸 Foto da tela salva com sucesso: {caminho_foto}")
         
         navegador.close()
-        print("✅ Teste finalizado.")
+        print("✅ Caçada finalizada com sucesso.")
 
 if __name__ == "__main__":
-    iniciar_teste_bot()
+    # Testando um voo de Manaus para Guarulhos para daqui a algumas semanas
+    caçar_passagem("MAO", "GRU", "2026-07-15")
